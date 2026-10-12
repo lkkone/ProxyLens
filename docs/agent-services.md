@@ -1,85 +1,41 @@
-# 设备端后台启动
+# 设备端后台运行
 
-先前台运行确认面板收到上报，再设置后台启动。Agent 应以运行 Clash Verge 的同一用户启动，才能找到它的配置、Socket 或命名管道。
+在管理页选择设备平台，下载并解压安装包，按页面提示执行安装脚本。桌面安装无需管理员权限，不把 Agent 放到系统目录。脚本自动放好 Agent 与配置、注册后台服务并立即启动；重复安装会替换此用户原来的 Agent 与设备配置。
 
-## macOS：LaunchAgent
+| 平台 | 安装 | 自动启动 | 安装位置与日志 |
+| --- | --- | --- | --- |
+| macOS | 页面的一条 `bash` 命令，或双击 `install.command` | LaunchAgent，登录时启动 | `~/Library/Application Support/ProxyLens/`；日志 `agent.log` |
+| Windows | 双击 `install.cmd` | 当前用户的隐藏计划任务 | `%LOCALAPPDATA%\ProxyLens`；日志 `agent.log`、`agent-error.log` |
+| Linux | `sh install.sh` | 用户级 systemd | `~/.local/share/proxylens/`；日志 `journalctl --user -u proxylens-agent -f` |
 
-将二进制与配置放在 `~/Library/Application Support/ProxyLens/`。下面以 Apple 芯片为例，Intel 把文件名里的 `arm64` 改成 `amd64`。
+macOS 安装包默认解压到“下载”目录，页面命令使用这个位置；自定义下载位置时，将 `install.command` 的实际路径传给 `bash`。脚本会给 Agent 设置执行权限，配置文件仅当前用户可读写。安装完成后可删除下载的安装包，建议妥善保留卸载脚本。
 
-创建 `~/Library/LaunchAgents/com.proxylens.agent.plist`，将其中 `/Users/YOUR_USER` 替换为你的实际用户目录：
+Windows 安装脚本用当前用户注册任务，不需要输入账号密码；脚本仅在此次启动时使用 PowerShell 的 ExecutionPolicy Bypass，不修改系统策略。企业策略可能禁止注册计划任务。macOS 无图形登录会话、Linux 无用户级 systemd 时，安装脚本会显示明确错误。
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.proxylens.agent</string>
-  <key>ProgramArguments</key><array>
-    <string>/Users/YOUR_USER/Library/Application Support/ProxyLens/proxylens-agent-darwin-arm64</string>
-    <string>-config</string>
-    <string>/Users/YOUR_USER/Library/Application Support/ProxyLens/agent.json</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>30</integer>
-  <key>StandardOutPath</key><string>/Users/YOUR_USER/Library/Application Support/ProxyLens/agent.log</string>
-  <key>StandardErrorPath</key><string>/Users/YOUR_USER/Library/Application Support/ProxyLens/agent.log</string>
-</dict></plist>
-```
+## 查看与重启
+
+macOS：
 
 ```sh
-chmod 600 "$HOME/Library/Application Support/ProxyLens/agent.json"
-chmod +x "$HOME/Library/Application Support/ProxyLens/proxylens-agent-darwin-arm64"
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.proxylens.agent.plist"
+launchctl print "gui/$(id -u)/com.proxylens.agent"
+launchctl kickstart -k "gui/$(id -u)/com.proxylens.agent"
+tail -n 50 "$HOME/Library/Application Support/ProxyLens/agent.log"
 ```
 
-停止并取消本次加载：
+Windows：在任务计划程序中找到 `ProxyLens Agent`，可停止或运行。
+
+Linux：
 
 ```sh
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.proxylens.agent.plist"
-```
-
-这是用户登录时的服务。设备睡眠或用户退出后不能保证采集，按“允许离线”策略处理。首次运行遇到系统安全拦截时，在“系统设置 → 隐私与安全性”允许打开你下载的 Agent，然后再配置自启动。
-
-## Linux：用户级 systemd
-
-将文件放在 `~/.local/share/proxylens/`，创建 `~/.config/systemd/user/proxylens-agent.service`：
-
-```ini
-[Unit]
-Description=ProxyLens local proxy agent
-After=network-online.target
-
-[Service]
-ExecStart=%h/.local/share/proxylens/proxylens-agent-linux-amd64 -config %h/.local/share/proxylens/agent.json
-Restart=always
-RestartSec=30
-NoNewPrivileges=true
-
-[Install]
-WantedBy=default.target
-```
-
-```sh
-chmod 600 ~/.local/share/proxylens/agent.json
-chmod +x ~/.local/share/proxylens/proxylens-agent-linux-amd64
-systemctl --user daemon-reload
-systemctl --user enable --now proxylens-agent
+systemctl --user status proxylens-agent
+systemctl --user restart proxylens-agent
 journalctl --user -u proxylens-agent -f
 ```
 
-常驻服务器可由管理员为该用户开启 lingering：`sudo loginctl enable-linger YOUR_USER`。Mihomo 若使用其他用户或自定义路径，需明确配置 `clash_config_path` / `controller_url`，不要把控制接口改成公网监听。
+Linux 服务器若需退出登录后持续采集，由管理员执行 `sudo loginctl enable-linger YOUR_USER`。桌面系统在重启并登录后恢复采集，关机、休眠或用户退出期间不能保证上报。
 
-停止：`systemctl --user disable --now proxylens-agent`。
+## 卸载
 
-## Windows：任务计划程序
+运行安装包内的 `uninstall.command`（macOS，可用 `bash` 执行）、`uninstall.cmd`（Windows）或 `sh uninstall.sh`（Linux）。停止后台服务并删除本用户的 Agent、配置与日志。云端设备及历史保留，需在管理页另行删除。
 
-把二进制与配置放在用户目录下，例如 `C:\Users\YOUR_USER\ProxyLens\`。打开“任务计划程序” → “创建任务”：
-
-1. 名称：`ProxyLens Agent`，选择当前运行 Clash Verge 的用户。
-2. 触发器：“登录时”。
-3. 操作：“启动程序”，程序填写 Agent 的完整路径。
-4. 参数：`-config "C:\Users\YOUR_USER\ProxyLens\agent.json"`。
-5. 起始于：`C:\Users\YOUR_USER\ProxyLens`。
-6. 设置：失败时每 1 分钟重启，取消“运行超过指定时间则停止”。办公笔记本按需求取消仅交流电启动的限制。
-
-手动运行任务后在面板确认上报。任务结束即可停止采集。ARM Windows 下载 `windows-arm64.exe`；Windows 代理设置按运行 Agent 的用户读取。
+Linux 已使用 root 登录的服务器可直接执行安装脚本，注册系统级服务并在开机时启动；无需另行使用 sudo。仍应与 Mihomo 使用同一运行用户。root 安装日志使用 `journalctl -u proxylens-agent -f`。

@@ -2,6 +2,7 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const fs = require("node:fs");
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const base = process.env.TEST_URL || "http://localhost:18791";
 const password =
   process.env.TEST_PASSWORD || "ProxyLens-isolated-test-password";
@@ -155,6 +156,61 @@ fs.mkdirSync(artifacts, { recursive: true });
     await page
       .getByRole("heading", { name: "设备配置", exact: true })
       .waitFor();
+    const packagePromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "下载安装包", exact: true }).click();
+    const packageDownload = await packagePromise;
+    fs.mkdirSync(".local", { recursive: true });
+    await packageDownload.saveAs(".local/installer-qa.zip");
+    execFileSync("python3", [
+      "-c",
+      `import zipfile, json
+with zipfile.ZipFile('.local/installer-qa.zip') as z:
+ assert z.testzip() is None
+ prefix = 'proxylens-darwin-arm64/'
+ assert z.getinfo(prefix+'install.command').external_attr >> 16 & 0o100
+ assert len(z.read(prefix+'proxylens-agent')) > 1000000
+ assert json.loads(z.read(prefix+'agent.json'))['server_url'] == '${base}'
+ assert b'sudo' not in z.read(prefix+'install.command').split(b'set -euo pipefail')[0]
+ z.extractall('.local/installer-qa')
+`,
+    ]);
+    for (const target of [
+      "darwin-amd64",
+      "windows-amd64",
+      "windows-arm64",
+      "linux-amd64",
+      "linux-arm64",
+    ]) {
+      await page.getByLabel("设备平台", { exact: true }).selectOption(target);
+      const pending = page.waitForEvent("download");
+      await page
+        .getByRole("button", { name: "下载安装包", exact: true })
+        .click();
+      await (await pending).saveAs(".local/installer-platform.zip");
+      execFileSync("python3", [
+        "-c",
+        `import zipfile, json
+with zipfile.ZipFile('.local/installer-platform.zip') as z:
+ assert z.testzip() is None
+ prefix = 'proxylens-${target}/'
+ windows = '${target}'.startswith('windows')
+ binary = 'proxylens-agent.exe' if windows else 'proxylens-agent'
+ assert len(z.read(prefix+binary)) > 1000000
+ assert json.loads(z.read(prefix+'agent.json'))['server_url'] == '${base}'
+ if windows:
+  assert z.read(prefix+'install.ps1').startswith(b'\\xef\\xbb\\xbf')
+  assert b'-WindowStyle Hidden' in z.read(prefix+'install.ps1')
+  assert prefix+'uninstall.cmd' in z.namelist()
+ else:
+  script = 'install.command' if '${target}'.startswith('darwin') else 'install.sh'
+  assert z.getinfo(prefix+script).external_attr >> 16 & 0o100
+`,
+      ]);
+    }
+    await page
+      .getByLabel("设备平台", { exact: true })
+      .selectOption("darwin-arm64");
+    await page.getByText("手动接入", { exact: true }).click();
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "下载 agent.json" }).click();
     const download = await downloadPromise;

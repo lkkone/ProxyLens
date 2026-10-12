@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, nextTick } from "vue";
 import HeartbeatBar from "./HeartbeatBar.vue";
 import DeviceEditor from "./DeviceEditor.vue";
+import { installFiles, zipFiles } from "./install-package.js";
 
 const admin = location.pathname.replace(/\/$/, "") === "/admin";
 document.title = admin ? "咸鱼的代理管理" : "咸鱼的代理状态";
@@ -300,55 +301,96 @@ const targets = [
 ];
 const binary = (t) =>
   `proxylens-agent-${t}${t.startsWith("windows") ? ".exe" : ""}`;
-const runCommand = computed(() =>
-  installTarget.value.startsWith("windows")
-    ? `.\\${binary(installTarget.value)} -config .\\agent.json`
-    : `chmod +x ${binary(installTarget.value)}\n./${binary(installTarget.value)} -config ./agent.json`,
-);
+const packageBusy = ref(false);
+const runCommand = computed(() => {
+  const directory = `proxylens-${installTarget.value}`;
+  if (installTarget.value.startsWith("windows"))
+    return "解压后双击 install.cmd";
+  if (installTarget.value.startsWith("darwin"))
+    return `bash "$HOME/Downloads/${directory}/install.command"`;
+  return `sh "$HOME/Downloads/${directory}/install.sh"`;
+});
+function deviceConfig() {
+  const raw = configURL.value.replace(/\/$/, "");
+  const u = new URL(raw);
+  if (
+    !["http:", "https:"].includes(u.protocol) ||
+    u.username ||
+    u.password ||
+    u.search ||
+    u.hash ||
+    u.pathname !== "/"
+  )
+    throw new Error("请输入完整的服务根地址");
+  if (
+    u.protocol === "http:" &&
+    !["localhost", "127.0.0.1", "[::1]"].includes(u.hostname) &&
+    !allowHTTP.value
+  )
+    throw new Error("远程地址使用 HTTPS；局域网调试需勾选允许 HTTP");
+  return {
+    server_url: raw,
+    token: token.value,
+    adapter: "mihomo",
+    controller_url: controllerURL.value.trim(),
+    controller_secret: controllerSecret.value,
+    allow_http: allowHTTP.value,
+    ...enrollPolicy.value,
+  };
+}
+function saveDownload(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function downloadConfig() {
   try {
-    const raw = configURL.value.replace(/\/$/, "");
-    const u = new URL(raw);
-    if (
-      !["http:", "https:"].includes(u.protocol) ||
-      u.username ||
-      u.password ||
-      u.search ||
-      u.hash ||
-      u.pathname !== "/"
-    )
-      throw new Error("请输入完整的服务根地址");
-    if (
-      u.protocol === "http:" &&
-      !["localhost", "127.0.0.1", "[::1]"].includes(u.hostname) &&
-      !allowHTTP.value
-    )
-      throw new Error("远程地址使用 HTTPS；局域网调试需勾选允许 HTTP");
-    const c = {
-      server_url: raw,
-      token: token.value,
-      adapter: "mihomo",
-      controller_url: controllerURL.value.trim(),
-      controller_secret: controllerSecret.value,
-      allow_http: allowHTTP.value,
-      ...enrollPolicy.value,
-    };
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(c, null, 2) + "\n"], {
+    saveDownload(
+      new Blob([JSON.stringify(deviceConfig(), null, 2) + "\n"], {
         type: "application/json",
       }),
+      "agent.json",
     );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "agent.json";
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
     flash("配置已下载");
     formError.value = "";
   } catch (e) {
     formError.value = e.message;
   }
 }
+async function downloadPackage() {
+  packageBusy.value = true;
+  formError.value = "";
+  try {
+    const config = deviceConfig();
+    const target = installTarget.value;
+    const response = await fetch("/downloads/" + binary(target), {
+      signal: AbortSignal.timeout(120000),
+    });
+    if (!response.ok) throw new Error("Agent 下载失败，请重新登录后重试");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    saveDownload(
+      zipFiles(installFiles(target, config, bytes)),
+      `proxylens-${target}.zip`,
+    );
+    flash("安装包已下载，解压后即可安装");
+  } catch (e) {
+    formError.value = e.message;
+  } finally {
+    packageBusy.value = false;
+  }
+}
+async function copyInstallCommand() {
+  try {
+    await navigator.clipboard.writeText(runCommand.value);
+    flash("安装命令已复制");
+  } catch {
+    flash("请选中并复制安装命令");
+  }
+}
+
 let timer;
 onMounted(() => {
   init();
@@ -526,20 +568,15 @@ onUnmounted(() => clearInterval(timer));
     </div>
     <template v-if="view === 'enroll'"
       ><section class="step">
-        <h3>1. 下载 Agent</h3>
-        <p>在被监测设备上运行，无需 Docker 或额外运行环境。</p>
-        <div class="download-links">
-          <a
-            v-for="[t, label] in targets"
-            :key="t"
-            class="btn"
-            :href="'/downloads/' + binary(t)"
-            >{{ label }}</a
-          >
-        </div>
+        <h3>1. 选择设备</h3>
+        <select v-model="installTarget" aria-label="设备平台">
+          <option v-for="[t, label] in targets" :key="t" :value="t">
+            {{ label }}
+          </option>
+        </select>
       </section>
       <section class="step">
-        <h3>2. 下载配置</h3>
+        <h3>2. 下载安装包</h3>
         <label
           >设备能访问的上报地址<input
             v-model="configURL"
@@ -563,20 +600,53 @@ onUnmounted(() => clearInterval(timer));
           >
           <p class="hint">控制接口密钥仅写入下载的文件，不提交到服务端。</p>
         </details>
-        <button class="btn primary" @click="downloadConfig">
-          下载 agent.json
+        <button
+          class="btn primary"
+          :disabled="packageBusy"
+          @click="downloadPackage"
+        >
+          {{ packageBusy ? "正在准备安装包…" : "下载安装包" }}
         </button>
+        <p class="hint">
+          包含
+          Agent、设备配置、安装与卸载脚本，无需手动移动文件或输入管理员密码。
+        </p>
+        <details>
+          <summary>手动接入</summary>
+          <div class="download-links">
+            <a class="btn" :href="'/downloads/' + binary(installTarget)"
+              >仅下载 Agent</a
+            >
+            <button class="btn" @click="downloadConfig">下载 agent.json</button>
+          </div>
+        </details>
         <p class="form-error" role="alert">{{ formError }}</p>
       </section>
       <section class="step">
-        <h3>3. 在设备上运行</h3>
-        <select v-model="installTarget" aria-label="设备平台">
-          <option v-for="[t, label] in targets" :key="t" :value="t">
-            {{ label }}
-          </option>
-        </select>
+        <h3>3. 安装并后台运行</h3>
+        <p v-if="installTarget.startsWith('windows')">
+          解压安装包，双击 install.cmd。使用当前用户安装，无需管理员权限。
+        </p>
+        <p v-else-if="installTarget.startsWith('darwin')">
+          在“下载”目录解压安装包，然后在终端执行下面这一条命令。不要使用 sudo。
+        </p>
+        <p v-else>
+          在下载目录解压安装包，用当前用户执行下面的命令。需要用户级 systemd。
+        </p>
         <pre>{{ runCommand }}</pre>
-        <p>把 Agent 与 agent.json 放在同一目录。后台启动方法见 README。</p>
+        <button
+          v-if="!installTarget.startsWith('windows')"
+          class="btn"
+          @click="copyInstallCommand"
+        >
+          复制安装命令
+        </button>
+        <p class="hint">
+          安装后静默运行，关闭终端不影响上报；重启电脑并登录后自动启动。电脑休眠时暂停上报。
+        </p>
+        <p class="hint">
+          再次运行安装脚本可更新配置。卸载时运行安装包内的 uninstall 脚本。
+        </p>
       </section>
       <div class="actions">
         <button class="btn" @click="close">完成</button>

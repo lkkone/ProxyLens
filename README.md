@@ -35,29 +35,16 @@ RETENTION_DAYS=30
 ## 接入设备
 
 1. 登录 `/admin`，点击“接入设备”，填写名称、分组及可选备注。偶尔在线的电脑可勾选“允许离线”。
-2. 下载对应系统和架构的 Agent，以及 `agent.json`；确认上报地址，设备凭证自动生成。
-3. 在运行 Clash Verge 的同一用户下启动 Agent。
+2. 选择系统和架构，确认上报地址，下载并解压**安装包**。Agent、设备凭证和安装脚本已包含在内。
+3. macOS 在终端执行页面给出的**一条命令**；Windows 双击 `install.cmd`；Linux 执行 `install.sh`。使用运行 Clash Verge 的同一用户，不需要 sudo，也不需要手动移动文件。
 
-```sh
-# macOS Apple 芯片（Intel 使用 darwin-amd64）
-chmod +x proxylens-agent-darwin-arm64
-chmod 600 agent.json
-./proxylens-agent-darwin-arm64 -config ./agent.json
+安装后 Agent 静默运行，关闭终端不会停止上报，重启并登录后自动启动。重新运行安装脚本可更新同一用户的 Agent 与配置；运行安装包里的 `uninstall` 脚本可停止并移除它。每个系统用户安装一个 Agent。
 
-# Linux x64
-chmod +x proxylens-agent-linux-amd64
-chmod 600 agent.json
-./proxylens-agent-linux-amd64 -config ./agent.json
-```
+macOS 使用 LaunchAgent；Windows 使用当前用户的隐藏计划任务；Linux 使用用户级 systemd，root 安装时自动使用系统级服务。Linux 常驻服务器若需退出登录后继续运行，由管理员为该用户开启 lingering。电脑休眠和用户退出时，桌面代理客户端可能也停止运行。
 
-```powershell
-# Windows x64
-.\proxylens-agent-windows-amd64.exe -config .\agent.json
-```
+Agent 自动识别 Clash Verge 本地控制接口，支持 Unix Socket、Windows 命名管道和本地 TCP。通常无需高级设置，也无需开放设备入站端口。远程上报使用 HTTPS；可信局域网 HTTP 调试需启用 `allow_http`。配置在浏览器内打包，本地控制接口密钥不提交到服务端。
 
-Agent 自动识别 Clash Verge 本地控制接口，支持 Unix Socket、Windows 命名管道和本地 TCP。未识别时在 `agent.json` 指定 `clash_config_path`，或设置 `controller_url` / `controller_secret`。无需开放设备入站端口。远程上报使用 HTTPS；可信局域网 HTTP 调试需启用 `allow_http`。
-
-后台自启动见 [设备端服务配置](docs/agent-services.md)。重新生成配置会撤销旧设备凭证，需替换 `agent.json` 并重启 Agent。
+具体安装位置和日志见 [设备端服务配置](docs/agent-services.md)。重新生成配置会撤销旧设备凭证，需下载新安装包并再次安装。
 
 ## 监测规则
 
