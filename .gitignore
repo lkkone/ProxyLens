@@ -1,0 +1,15 @@
+.env
+.local/
+dist/
+artifacts/
+**/__pycache__/
+*.db
+*.db-shm
+*.db-wal
+agent.json
+*.test
+.DS_Store
+
+.hallmark/
+node_modules/
+frontend/dist/

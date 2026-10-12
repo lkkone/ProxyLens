@@ -1,0 +1,17 @@
+{
+  "server_url": "https://proxy.example.com",
+  "token": "从面板创建设备后下载配置",
+  "adapter": "mihomo",
+  "controller_url": "",
+  "controller_secret": "",
+  "controller_socket": "",
+  "controller_pipe": "",
+  "clash_config_path": "",
+  "allow_http": false,
+  "report_interval": 30,
+  "probe_interval": 300,
+  "probe_enabled": true,
+  "primary_group": "",
+  "airport_label": "",
+  "probe_url": "https://www.gstatic.com/generate_204"
+}

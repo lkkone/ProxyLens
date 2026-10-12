@@ -1,0 +1,5 @@
+# Build a cloud image without replacing the development image tag.
+services:
+  proxylens:
+    image: proxylens:0.1.0-${RELEASE_ARCH:-amd64}
+    platform: linux/${RELEASE_ARCH:-amd64}

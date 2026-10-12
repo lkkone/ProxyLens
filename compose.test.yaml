@@ -1,0 +1,39 @@
+services:
+  test-api:
+    image: proxylens:0.1.0
+    profiles: [tests]
+    entrypoint: [python, /tests/test_api.py]
+    environment:
+      TEST_URL: http://test-server:8080
+      TEST_PASSWORD: ProxyLens-isolated-test-password
+    volumes:
+      - ./tests:/tests:ro
+    depends_on:
+      test-server:
+        condition: service_healthy
+  test-storage:
+    environment:
+      ADMIN_USERNAME: likaikai
+      ADMIN_PASSWORD: ProxyLens-isolated-test-password
+    image: proxylens:0.1.0
+    profiles: [tests]
+    entrypoint: [python, /tests/test_storage.py]
+    volumes:
+      - ./tests:/tests:ro
+  test-server:
+    image: proxylens:0.1.0
+    ports:
+      - "127.0.0.1:18791:8080"
+    environment:
+      PUBLIC_URL: http://localhost:18791
+      ADMIN_USERNAME: likaikai
+      ADMIN_PASSWORD: ProxyLens-isolated-test-password
+    volumes:
+      - test-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+volumes:
+  test-data:

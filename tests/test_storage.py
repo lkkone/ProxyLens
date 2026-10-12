@@ -1,0 +1,113 @@
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, "/app")
+import app
+
+
+class StorageTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.credentials = (app.ADMIN_USERNAME, app.ADMIN_PASSWORD)
+        app.DATA = Path(self.temp.name)
+        app.init_db()
+
+    def tearDown(self):
+        app.ADMIN_USERNAME, app.ADMIN_PASSWORD = self.credentials
+        self.temp.cleanup()
+
+    def test_bootstrap_and_restart_persistence(self):
+        with app.connect() as db:
+            username = db.execute(
+                "SELECT value FROM settings WHERE key='username'"
+            ).fetchone()["value"]
+            old = db.execute(
+                "SELECT value FROM settings WHERE key='password'"
+            ).fetchone()["value"]
+        self.assertEqual(username, app.ADMIN_USERNAME)
+        app.init_db()
+        with app.connect() as db:
+            self.assertEqual(
+                db.execute(
+                    "SELECT value FROM settings WHERE key='password'"
+                ).fetchone()["value"],
+                old,
+            )
+
+    def test_environment_credentials_change_revokes_sessions(self):
+        import json
+
+        with app.connect() as db:
+            db.execute(
+                "INSERT INTO sessions VALUES(?,?)", ("old-session", time.time() + 3600)
+            )
+        app.ADMIN_USERNAME = "changed-admin"
+        app.ADMIN_PASSWORD = "changed-test-password"
+        app.init_db()
+        with app.connect() as db:
+            self.assertEqual(
+                db.execute(
+                    "SELECT value FROM settings WHERE key='username'"
+                ).fetchone()["value"],
+                "changed-admin",
+            )
+            stored = json.loads(
+                db.execute(
+                    "SELECT value FROM settings WHERE key='password'"
+                ).fetchone()["value"]
+            )
+            self.assertEqual(
+                stored["hash"], app.password_hash(app.ADMIN_PASSWORD, stored["salt"])
+            )
+            self.assertEqual(
+                db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0], 0
+            )
+
+    def test_offline_gray_gaps_and_history_persistence(self):
+        import json
+
+        now = time.time()
+        p = app.policy_from({})
+        r = {
+            "core_reachable": True,
+            "mode": "rule",
+            "selected_node": "HK",
+            "probe": {"ok": True, "at": now - 3600, "node": "HK", "delay_ms": 30},
+        }
+        with app.connect() as db:
+            db.execute(
+                "INSERT INTO devices(id,name,group_name,allow_offline,token_hash,policy,created,last_seen,latest) VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    "device",
+                    "Mac",
+                    "Office",
+                    1,
+                    "tokenhash",
+                    json.dumps(p),
+                    now - 7200,
+                    now - 3600,
+                    json.dumps(r),
+                ),
+            )
+            db.execute(
+                "INSERT INTO reports(device_id,at,state,delay) VALUES(?,?,?,?)",
+                ("device", now - 3600, "healthy", 30),
+            )
+        app.init_db()
+        with app.connect() as db:
+            row = db.execute("SELECT * FROM devices WHERE id='device'").fetchone()
+            snapshot = app.serialize_device(db, row, now)
+            self.assertEqual(snapshot["state"], "offline")
+            self.assertTrue(snapshot["allow_offline"])
+            self.assertEqual(len(snapshot["history"]), 60)
+            self.assertEqual(snapshot["history"][-1]["state"], "offline")
+            self.assertEqual(
+                sum(b["state"] == "healthy" for b in snapshot["history"]), 1
+            )
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
