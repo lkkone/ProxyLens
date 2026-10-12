@@ -1,5 +1,6 @@
 ARG GO_IMAGE=golang:1.25-alpine
-ARG PYTHON_IMAGE=python:3.13-alpine
+# Keep SQLite compatible with older Docker seccomp profiles (pwritev2 fallback).
+ARG PYTHON_IMAGE=python:3.13-alpine3.21
 ARG NODE_IMAGE=node:22-alpine
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend
 WORKDIR /web
