@@ -10,6 +10,8 @@
 
 macOS 安装包默认解压到“下载”目录，页面命令使用这个位置；自定义下载位置时，将 `install.command` 的实际路径传给 `bash`。脚本会给 Agent 设置执行权限，配置文件仅当前用户可读写。安装完成后可删除下载的安装包，建议妥善保留卸载脚本。
 
+Windows 安装时先执行一次上报，再注册并检查后台任务；结果保留在安装窗口，日志为 `%LOCALAPPDATA%\ProxyLens\install.log`。
+
 Windows 安装脚本用当前用户注册任务，不需要输入账号密码；脚本仅在此次启动时使用 PowerShell 的 ExecutionPolicy Bypass，不修改系统策略。企业策略可能禁止注册计划任务。macOS 无图形登录会话、Linux 无用户级 systemd 时，安装脚本会显示明确错误。
 
 ## 查看与重启

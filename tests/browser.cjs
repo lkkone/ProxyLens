@@ -156,6 +156,12 @@ fs.mkdirSync(artifacts, { recursive: true });
     await page
       .getByRole("heading", { name: "设备配置", exact: true })
       .waitFor();
+    const snapshot = await (
+      await authRequest.get(base + "/api/devices")
+    ).json();
+    created.push(
+      snapshot.devices.find((d) => d.name === "UI-created device").id,
+    );
     const packagePromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "下载安装包", exact: true }).click();
     const packageDownload = await packagePromise;
@@ -201,6 +207,12 @@ with zipfile.ZipFile('.local/installer-platform.zip') as z:
   assert z.read(prefix+'install.ps1').startswith(b'\\xef\\xbb\\xbf')
   assert b'-WindowStyle Hidden' in z.read(prefix+'install.ps1')
   assert prefix+'uninstall.cmd' in z.namelist()
+  cmd = z.read(prefix+'install.cmd')
+  assert len(cmd.splitlines()) >= 5
+  assert bytes([13,10]) in cmd
+  assert bytes([92,114,92,110]) not in cmd
+  assert b'pause' in cmd
+  assert b'-once' in z.read(prefix+'install.ps1')
  else:
   script = 'install.command' if '${target}'.startswith('darwin') else 'install.sh'
   assert z.getinfo(prefix+script).external_attr >> 16 & 0o100
@@ -221,12 +233,6 @@ with zipfile.ZipFile('.local/installer-platform.zip') as z:
     assert.equal(config.server_url, base);
     assert.equal(config.probe_interval, 300);
     await page.getByRole("button", { name: "完成", exact: true }).click();
-    const snapshot = await (
-      await authRequest.get(base + "/api/devices")
-    ).json();
-    created.push(
-      snapshot.devices.find((d) => d.name === "UI-created device").id,
-    );
     assert.equal(await page.getByLabel("机场名称", { exact: true }).count(), 0);
     await page
       .locator(".sidebar-device")

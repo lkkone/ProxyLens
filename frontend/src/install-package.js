@@ -85,7 +85,7 @@ export function installFiles(target, config, bytes) {
     for (const action of ["install", "uninstall"])
       files.push({
         name: `${action}.cmd`,
-        data: `@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0${action}.ps1"\r\nif errorlevel 1 pause\r\n`,
+        data: `@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0${action}.ps1"\r\nset "INSTALL_RESULT=%ERRORLEVEL%"\r\npause\r\nexit /b %INSTALL_RESULT%\r\n`,
       });
   } else {
     files.push(
