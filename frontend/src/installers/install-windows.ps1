@@ -3,16 +3,22 @@ try {
 $dir = Join-Path $env:LOCALAPPDATA 'ProxyLens'
 $taskName = 'ProxyLens Agent'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$userSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 if (!(Test-Path "$PSScriptRoot\agent.json") -or !(Test-Path "$PSScriptRoot\proxylens-agent.exe")) { throw '请先解压完整安装包。' }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
+# Apply inheritable permissions only to the directory. Removing inheritance
+# recursively can leave existing files with an empty ACL.
+& icacls.exe $dir /inheritance:r /grant:r "*${userSid}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw '无法设置安装目录权限。' }
+Get-ChildItem -LiteralPath $dir -Force | ForEach-Object {
+    & icacls.exe $_.FullName /reset /T /C | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw '无法恢复已安装文件的权限。' }
+}
 Start-Transcript -Path "$dir\install.log" -Force | Out-Null
 if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { Stop-ScheduledTask -TaskName $taskName }
 Copy-Item "$PSScriptRoot\proxylens-agent.exe" "$dir\proxylens-agent.exe" -Force
 Copy-Item "$PSScriptRoot\agent.json" "$dir\agent.json" -Force
 Unblock-File "$dir\proxylens-agent.exe"
-# Restrict the configuration and executable to the current user and SYSTEM.
-& icacls.exe $dir /inheritance:r /grant:r "${identity}:(OI)(CI)F" 'SYSTEM:(OI)(CI)F' /T | Out-Null
-if ($LASTEXITCODE -ne 0) { throw '无法设置配置文件权限。' }
 Write-Host '正在检查 Agent 并执行首次上报，请稍候…'
 $check = Start-Process -FilePath "$dir\proxylens-agent.exe" -ArgumentList "-config `"$dir\agent.json`" -once" -WorkingDirectory $dir -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput "$dir\first-report.log" -RedirectStandardError "$dir\first-report-error.log"
 if ($check.ExitCode -ne 0) {

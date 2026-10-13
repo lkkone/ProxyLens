@@ -212,7 +212,11 @@ with zipfile.ZipFile('.local/installer-platform.zip') as z:
   assert bytes([13,10]) in cmd
   assert bytes([92,114,92,110]) not in cmd
   assert b'pause' in cmd
-  assert b'-once' in z.read(prefix+'install.ps1')
+  ps = z.read(prefix+'install.ps1')
+  assert b'-once' in ps
+  assert b'/reset /T /C' in ps
+  assert b'/inheritance:r /grant:r' in ps
+  assert b"'*S-1-5-18:(OI)(CI)F' /T" not in ps
  else:
   script = 'install.command' if '${target}'.startswith('darwin') else 'install.sh'
   assert z.getinfo(prefix+script).external_attr >> 16 & 0o100
