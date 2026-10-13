@@ -460,6 +460,7 @@ func (m *Mihomo) Collect(ctx context.Context, c Config) Report {
 	} else if r.PrimaryGroup != "" {
 		r.SelectedNode = resolve(r.PrimaryGroup, all.Proxies)
 	}
+	providerOnly := map[string]string{}
 	var providers struct {
 		Providers map[string]struct {
 			VehicleType      string  `json:"vehicleType"`
@@ -469,6 +470,22 @@ func (m *Mihomo) Collect(ctx context.Context, c Config) Report {
 		} `json:"providers"`
 	}
 	if e := m.get(ctx, "/providers/proxies", &providers, 3*time.Second); e == nil {
+		// Provider-backed nodes may be absent from /proxies. Include them
+		// before resolving the selected group and matching its subscription.
+		for name, provider := range providers.Providers {
+			for _, node := range provider.Proxies {
+				if _, exists := all.Proxies[node.Name]; !exists {
+					all.Proxies[node.Name] = node
+					providerOnly[node.Name] = name
+				}
+			}
+		}
+		for i := range r.Groups {
+			r.Groups[i].Leaf = resolve(r.Groups[i].Name, all.Proxies)
+		}
+		if r.Mode != "direct" && r.PrimaryGroup != "" {
+			r.SelectedNode = resolve(r.PrimaryGroup, all.Proxies)
+		}
 		airports := []string{}
 		providerNames := []string{}
 		for name := range providers.Providers {
@@ -517,6 +534,9 @@ func (m *Mihomo) Collect(ctx context.Context, c Config) Report {
 			Delay int `json:"delay"`
 		}
 		path := "/proxies/" + url.PathEscape(r.SelectedNode) + "/delay?timeout=5000&url=" + url.QueryEscape(c.ProbeURL)
+		if provider := providerOnly[r.SelectedNode]; provider != "" {
+			path = "/providers/proxies/" + url.PathEscape(provider) + "/" + url.PathEscape(r.SelectedNode) + "/healthcheck?timeout=5000&url=" + url.QueryEscape(c.ProbeURL)
+		}
 		if e := m.get(ctx, path, &delay, 7*time.Second); e != nil {
 			result.Error = e.Error()
 		} else if delay.Delay <= 0 {

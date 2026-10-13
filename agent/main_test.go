@@ -91,10 +91,10 @@ func TestCollectionPrivacyAndProbeBudget(t *testing.T) {
 		case r.URL.Path == "/configs":
 			w.Write([]byte(`{"mode":"rule","tun":{"enable":true},"secret":"do-not-upload"}`))
 		case r.URL.Path == "/proxies":
-			w.Write([]byte(`{"proxies":{"Proxy":{"type":"Selector","all":["HK"],"now":"HK"},"HK":{"name":"HK","type":"Shadowsocks","server":"private-server","password":"private-password","history":[]}}}`))
+			w.Write([]byte(`{"proxies":{"Proxy":{"type":"Selector","all":["HK"],"now":"HK"}}}`))
 		case r.URL.Path == "/providers/proxies":
-			w.Write([]byte(`{"providers":{"Airport":{"vehicleType":"HTTP","url":"https://private-subscription/token","subscriptionInfo":{"Upload":10,"Download":20,"Total":100,"Expire":2000000000},"proxies":[{"name":"HK"}]}}}`))
-		case strings.HasSuffix(r.URL.Path, "/delay"):
+			w.Write([]byte(`{"providers":{"Airport":{"vehicleType":"HTTP","url":"https://private-subscription/token","subscriptionInfo":{"Upload":10,"Download":20,"Total":100,"Expire":2000000000},"proxies":[{"name":"HK","type":"Shadowsocks","server":"private-server","password":"private-password"}]}}}`))
+		case r.URL.Path == "/providers/proxies/Airport/HK/healthcheck":
 			calls++
 			w.Write([]byte(`{"delay":42}`))
 		default:
