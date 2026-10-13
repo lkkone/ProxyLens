@@ -1,0 +1,27 @@
+name: proxylens
+services:
+  home-proxylens:
+    container_name: home-proxylens
+    image: ${PROXYLENS_IMAGE:-proxylens:0.1.0-arm64}
+    ports:
+      - "18790:8080"
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?Set ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      COOKIE_SECURE: "true"
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      PUBLIC_URL: https://proxy.likaikai.com
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
