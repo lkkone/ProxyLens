@@ -86,17 +86,17 @@ class StorageTests(unittest.TestCase):
                 ("history", "Mac", "Office", 0, "historytoken", json.dumps(p), now, now, json.dumps(report)),
             )
             for at, state in [(bucket - 40, "error"), (bucket + 10, "error"), (bucket + 30, "healthy")]:
-                db.execute("INSERT INTO reports(device_id,at,state,delay) VALUES(?,?,?,?)", ("history", at, state, 30))
+                db.execute("INSERT INTO heartbeats(device_id,at,state,delay) VALUES(?,?,?,?)", ("history", at, state, 30))
             row = db.execute("SELECT * FROM devices WHERE id='history'").fetchone()
             result = app.serialize_device(db, row, now)
             self.assertEqual(result["history"][-1]["state"], "healthy")
             self.assertEqual(result["history"][-1]["sample_at"], bucket + 30)
             self.assertEqual(result["history"][-2]["state"], "error")
-            db.execute("DELETE FROM reports WHERE device_id='history' AND at>=?", (bucket,))
+            db.execute("DELETE FROM heartbeats WHERE device_id='history' AND at>=?", (bucket,))
             result = app.serialize_device(db, row, now)
             self.assertEqual(result["state"], "healthy")
-            self.assertEqual(result["history"][-1]["state"], "offline")
-            self.assertIsNone(result["history"][-1]["sample_at"])
+            self.assertEqual(result["history"][-1]["state"], "error")
+            self.assertEqual(result["history"][-1]["sample_at"], bucket - 40)
 
     def test_offline_gray_gaps_and_history_persistence(self):
         import json
@@ -128,14 +128,16 @@ class StorageTests(unittest.TestCase):
                 "INSERT INTO reports(device_id,at,state,delay) VALUES(?,?,?,?)",
                 ("device", now - 3600, "healthy", 30),
             )
+            db.execute("DELETE FROM settings WHERE key='point_history_v1'")
+        app.init_db()
         app.init_db()
         with app.connect() as db:
             row = db.execute("SELECT * FROM devices WHERE id='device'").fetchone()
             snapshot = app.serialize_device(db, row, now)
             self.assertEqual(snapshot["state"], "offline")
             self.assertTrue(snapshot["allow_offline"])
-            self.assertEqual(len(snapshot["history"]), 60)
-            self.assertEqual(snapshot["history"][-1]["state"], "offline")
+            self.assertEqual(len(snapshot["history"]), 1)
+            self.assertEqual(snapshot["history"][-1]["state"], "healthy")
             self.assertEqual(
                 sum(b["state"] == "healthy" for b in snapshot["history"]), 1
             )

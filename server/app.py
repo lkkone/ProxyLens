@@ -67,11 +67,30 @@ def init_db():
           id INTEGER PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
           at REAL NOT NULL, state TEXT NOT NULL, delay REAL);
         CREATE INDEX IF NOT EXISTS reports_device_time ON reports(device_id, at);
+        CREATE TABLE IF NOT EXISTS heartbeats(
+          device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+          at REAL NOT NULL, state TEXT NOT NULL, delay REAL,
+          PRIMARY KEY(device_id,at));
         CREATE TABLE IF NOT EXISTS events(
           id INTEGER PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
           at REAL NOT NULL, message TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS events_device_time ON events(device_id, at);
         """)
+        if not db.execute(
+            "SELECT 1 FROM settings WHERE key='point_history_v1'"
+        ).fetchone():
+            # Keep real legacy report points once; never synthesize missing checks.
+            last = {}
+            for r in db.execute(
+                "SELECT device_id,at,state,delay FROM reports WHERE at>=? ORDER BY at",
+                (time.time() - 18000,),
+            ):
+                if r["at"] - last.get(r["device_id"], 0) >= 300:
+                    db.execute(
+                        "INSERT OR IGNORE INTO heartbeats VALUES(?,?,?,?)", tuple(r)
+                    )
+                    last[r["device_id"]] = r["at"]
+            db.execute("INSERT INTO settings VALUES('point_history_v1','1')")
         if "notes" not in {r["name"] for r in db.execute("PRAGMA table_info(devices)")}:
             db.execute("ALTER TABLE devices ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
         if not ADMIN_USERNAME.strip() or len(ADMIN_PASSWORD) < 8:
@@ -255,28 +274,18 @@ def serialize_device(db, row, now):
         if latest is None
         else ("offline" if stale else telemetry_state(latest, p, now))
     )
-    # Fixed 5-minute slots; gaps are unknown/offline, never fabricated green beats.
-    slot = 300
-    end = int(now // slot) * slot
-    start = end - 59 * slot
-    bins = {}
-    for r in db.execute(
-        "SELECT at,state,delay FROM reports WHERE device_id=? AND at>=? ORDER BY at",
-        (row["id"], start),
-    ):
-        key = int(r["at"] // slot) * slot
-        bins[key] = {
-            "at": key,
+    rows = db.execute(
+        "SELECT at,state,delay FROM heartbeats WHERE device_id=? AND at>=? AND at<=? ORDER BY at DESC LIMIT 60",
+        (row["id"], now - 18000, now),
+    ).fetchall()
+    history = [
+        {
+            "at": r["at"],
             "sample_at": r["at"],
             "state": r["state"],
             "delay_ms": r["delay"],
         }
-    history = [
-        bins.get(
-            start + i * slot,
-            {"at": start + i * slot, "sample_at": None, "state": "offline", "delay_ms": None},
-        )
-        for i in range(60)
+        for r in reversed(rows)
     ]
     counts = db.execute(
         "SELECT SUM(state IN ('healthy','slow','degraded')) healthy, SUM(state IN ('healthy','slow','degraded','error')) tested FROM reports WHERE device_id=? AND at>=?",
@@ -300,9 +309,11 @@ def serialize_device(db, row, now):
         "policy": p,
         "latest": latest,
         "history": history,
-        "availability": round(counts["healthy"] / counts["tested"] * 100, 2)
-        if counts["tested"]
-        else None,
+        "availability": (
+            round(counts["healthy"] / counts["tested"] * 100, 2)
+            if counts["tested"]
+            else None
+        ),
         "events": events,
     }
 
@@ -552,6 +563,33 @@ class Handler(BaseHTTPRequestHandler):
                     "INSERT INTO reports(device_id,at,state,delay) VALUES(?,?,?,?)",
                     (device["id"], now, state, delay),
                 )
+                probe = report.get("probe") or {}
+                previous_probe = old.get("probe") or {}
+                last_beat = db.execute(
+                    "SELECT at,state FROM heartbeats WHERE device_id=? ORDER BY at DESC LIMIT 1",
+                    (device["id"],),
+                ).fetchone()
+                fresh_probe = (
+                    probe.get("at") != previous_probe.get("at")
+                    and probe.get("at") is not None
+                )
+                if (
+                    fresh_probe
+                    or not last_beat
+                    or last_beat["state"] != state
+                    or (not probe and now - last_beat["at"] >= p["probe_interval"])
+                ):
+                    sample_at = (
+                        probe["at"]
+                        if fresh_probe
+                        and state in ("healthy", "slow", "degraded", "error")
+                        and report.get("core_reachable")
+                        else now
+                    )
+                    db.execute(
+                        "INSERT OR IGNORE INTO heartbeats VALUES(?,?,?,?)",
+                        (device["id"], sample_at, state, delay),
+                    )
                 db.commit()
                 return self.response(200, {"ok": True, "policy": p, "server_time": now})
             if not self.session(db):
@@ -675,6 +713,7 @@ def cleanup():
         with DB_LOCK, connect() as db:
             cutoff = time.time() - RETENTION_DAYS * 86400
             db.execute("DELETE FROM reports WHERE at<?", (cutoff,))
+            db.execute("DELETE FROM heartbeats WHERE at<?", (cutoff,))
             db.execute("DELETE FROM events WHERE at<?", (cutoff,))
             db.execute("DELETE FROM sessions WHERE expires<?", (time.time(),))
 

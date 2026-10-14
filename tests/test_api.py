@@ -188,6 +188,30 @@ class APIIntegration(unittest.TestCase):
         self.assertEqual(self.snapshot(d["id"])["state"], "healthy")
         self.assertEqual(self.snapshot(d["id"])["history"][-1]["state"], "healthy")
 
+    def test_repeated_probe_is_one_immutable_point(self):
+        import time
+
+        d = self.device()
+        r = self.report()
+        r["probe"]["at"] = time.time() - 2
+        for _ in range(3):
+            self.assertEqual(
+                self.request(
+                    "/api/v1/report", "POST", r, token=d["token"], public=True
+                )[0],
+                200,
+            )
+        first = self.snapshot(d["id"])["history"]
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0]["at"], r["probe"]["at"])
+        r["probe"]["at"] += 1
+        r["probe"]["ok"] = False
+        self.request("/api/v1/report", "POST", r, token=d["token"], public=True)
+        second = self.snapshot(d["id"])["history"]
+        self.assertEqual(second[:-1], first)
+        self.assertEqual(second[-1]["state"], "error")
+        self.assertEqual(len(second), 2)
+
     def test_stale_mismatched_disabled_and_direct(self):
         d = self.device()
         for update, expected in [
