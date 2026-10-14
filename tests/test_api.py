@@ -6,12 +6,14 @@ import unittest
 import urllib.error
 import urllib.request
 
-BASE = os.environ.get("TEST_URL", "http://localhost:18791")
+BASE = os.environ.get("TEST_URL")
 
 
 class APIIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        if not BASE:
+            raise unittest.SkipTest("Set TEST_URL to an isolated test server")
         cls.client = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor()
         )
@@ -159,7 +161,7 @@ class APIIntegration(unittest.TestCase):
             self.request("/api/v1/report", "POST", r, token=token, public=True)[0], 401
         )
 
-    def test_delay_colors_and_worst_bin(self):
+    def test_delay_colors_and_latest_sample(self):
         d = self.device()
         r = self.report()
         for delay, state in [
@@ -184,7 +186,7 @@ class APIIntegration(unittest.TestCase):
         r["probe"]["delay_ms"] = 50
         self.request("/api/v1/report", "POST", r, token=d["token"], public=True)
         self.assertEqual(self.snapshot(d["id"])["state"], "healthy")
-        self.assertEqual(self.snapshot(d["id"])["history"][-1]["state"], "error")
+        self.assertEqual(self.snapshot(d["id"])["history"][-1]["state"], "healthy")
 
     def test_stale_mismatched_disabled_and_direct(self):
         d = self.device()

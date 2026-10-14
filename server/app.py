@@ -218,11 +218,9 @@ def clean_report(body):
 def telemetry_state(report, policy, now):
     if not report.get("core_reachable"):
         return "error"
-    if report.get("mode") == "direct" or report.get("selected_node") in (
-        "DIRECT",
-        "REJECT",
-        "REJECT-DROP",
-    ):
+    if report.get("selected_node") in ("REJECT", "REJECT-DROP"):
+        return "error"
+    if report.get("mode") == "direct" or report.get("selected_node") == "DIRECT":
         return "direct"
     probe = report.get("probe")
     if not policy["probe_enabled"] or not probe:

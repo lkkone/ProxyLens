@@ -66,6 +66,12 @@ class StorageTests(unittest.TestCase):
                 db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0], 0
             )
 
+    def test_reject_is_not_reported_as_direct(self):
+        policy = app.policy_from({})
+        for node in ("REJECT", "REJECT-DROP"):
+            self.assertEqual(app.telemetry_state({"core_reachable": True, "mode": "rule", "selected_node": node}, policy, time.time()), "error")
+        self.assertEqual(app.telemetry_state({"core_reachable": True, "mode": "direct", "selected_node": "DIRECT"}, policy, time.time()), "direct")
+
     def test_history_uses_actual_latest_report_and_never_current_state(self):
         import json
 

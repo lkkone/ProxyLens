@@ -76,11 +76,16 @@ async function api(path, method = "GET", data) {
   }
   return b;
 }
+let refreshSequence = 0;
+let appliedSequence = 0;
 async function refresh() {
+  const sequence = ++refreshSequence;
   try {
     const b = await api(
       admin && authenticated.value ? "/api/devices" : "/api/status",
     );
+    if (sequence < appliedSequence) return;
+    appliedSequence = sequence;
     devices.value = b.devices;
     now.value = b.server_time;
     publicURL.value = b.public_url || publicURL.value;
@@ -90,6 +95,8 @@ async function refresh() {
     }
     failure.value = "";
   } catch (e) {
+    if (sequence < appliedSequence) return;
+    appliedSequence = sequence;
     failure.value = e.message;
     now.value = Date.now() / 1000;
   } finally {

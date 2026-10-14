@@ -1,0 +1,30 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_USERNAME: likaikai
+      ADMIN_PASSWORD: ProxyLens-isolated-test-password
+      PYTHONPATH: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: python -m unittest discover -s tests
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend audit --audit-level=high
+      - run: npm --prefix frontend run build
+      - run: docker build -t proxylens:0.1.0 .
+      - run: docker compose -p proxylens-ci -f compose.test.yaml up -d --wait test-server
+      - run: docker compose -p proxylens-ci -f compose.test.yaml --profile tests run --rm test-api
+      - if: always()
+        run: docker compose -p proxylens-ci -f compose.test.yaml down -v
