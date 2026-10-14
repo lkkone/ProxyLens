@@ -413,7 +413,7 @@ onUnmounted(() => clearInterval(timer));
 
 <template>
   <main v-if="admin && !authenticated" class="login panel">
-    <img src="/avatar.png" alt="" class="avatar" />
+    <img src="/rocket-avatar.png" alt="" class="avatar" />
     <h1>咸鱼的代理管理</h1>
     <form @submit.prevent="login">
       <label
@@ -444,7 +444,7 @@ onUnmounted(() => clearInterval(timer));
       <a href="/">← 展示页</a><button class="btn" @click="logout">退出</button>
     </div>
     <header class="page-title">
-      <img src="/avatar.png" class="avatar" alt="" />
+      <img src="/rocket-avatar.png" class="avatar" alt="" />
       <h1>{{ admin ? "咸鱼的代理管理" : "咸鱼的代理状态" }}</h1>
     </header>
     <div v-if="failure" class="connection-error" role="alert">
