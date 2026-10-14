@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, nextTick } from "vue";
+import { computed, onMounted, onUnmounted, ref, nextTick, watch } from "vue";
+import { createFaviconBadge } from "./faviconBadge.js";
 import HeartbeatBar from "./HeartbeatBar.vue";
 import DeviceEditor from "./DeviceEditor.vue";
 import { installFiles, zipFiles } from "./install-package.js";
@@ -142,14 +143,17 @@ function effectiveState(d) {
     ? "offline"
     : d.state;
 }
+const abnormalDevices = computed(() => devices.value.filter((d) =>
+  ["error", "degraded"].includes(effectiveState(d)) ||
+  (effectiveState(d) === "offline" && !d.allow_offline),
+));
+const faviconBadge = createFaviconBadge();
+watch(() => abnormalDevices.value.length, (count) => faviconBadge.update(count), { immediate: true });
+onUnmounted(() => faviconBadge.dispose());
 const overall = computed(() => {
   if (!devices.value.length)
     return { state: "unknown", symbol: "○", text: "等待设备接入" };
-  const errors = devices.value.filter(
-    (d) =>
-      ["error", "degraded"].includes(effectiveState(d)) ||
-      (effectiveState(d) === "offline" && !d.allow_offline),
-  );
+  const errors = abnormalDevices.value;
   if (errors.length)
     return {
       state: "error",
@@ -394,9 +398,8 @@ async function copyInstallCommand() {
 let timer;
 onMounted(() => {
   init();
-  timer = setInterval(() => {
-    if (!document.hidden) refresh();
-  }, 10000);
+  // Keep the tab badge current even when the dashboard is in the background.
+  timer = setInterval(refresh, 10000);
 });
 onUnmounted(() => clearInterval(timer));
 </script>
