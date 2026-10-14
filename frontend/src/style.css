@@ -883,9 +883,9 @@ pre {
     padding: 10px;
   }
   .device {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-    gap: 16px;
-    padding: 14px 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 18px 12px;
   }
   .device-values {
     grid-column: 1/-1;
@@ -894,12 +894,32 @@ pre {
     gap: 8px 16px;
   }
   .device > .history {
-    grid-column: 2;
-    grid-row: 1;
+    grid-column: 1/-1;
+    grid-row: 3;
+    width: 100%;
   }
   .device-info {
-    grid-column: 1;
+    grid-column: 1/-1;
     grid-row: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+  }
+  .device-name-row {
+    grid-column: 1/-1;
+  }
+  .device-tags {
+    margin: 0;
+  }
+  .last-seen {
+    margin: 0;
+    align-self: center;
+    text-align: right;
+    font-size: 11px;
+  }
+  .device-values strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .beats {
     gap: 2px;
