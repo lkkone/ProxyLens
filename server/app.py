@@ -267,21 +267,16 @@ def serialize_device(db, row, now):
         (row["id"], start),
     ):
         key = int(r["at"] // slot) * slot
-        old = bins.get(key)
-        rank = {
-            "healthy": 1,
-            "unknown": 2,
-            "direct": 2,
-            "slow": 3,
-            "degraded": 4,
-            "error": 5,
+        bins[key] = {
+            "at": key,
+            "sample_at": r["at"],
+            "state": r["state"],
+            "delay_ms": r["delay"],
         }
-        if old is None or rank.get(r["state"], 0) >= rank.get(old["state"], 0):
-            bins[key] = {"at": key, "state": r["state"], "delay_ms": r["delay"]}
     history = [
         bins.get(
             start + i * slot,
-            {"at": start + i * slot, "state": "offline", "delay_ms": None},
+            {"at": start + i * slot, "sample_at": None, "state": "offline", "delay_ms": None},
         )
         for i in range(60)
     ]
